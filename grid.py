@@ -1,5 +1,7 @@
 import pygame
-
+import time
+from astar import AStar
+import heapq
 class Grid:
     def __init__(self, window_size, grid_size):
         # Initialize Pygame
@@ -17,6 +19,8 @@ class Grid:
         self.GREEN = (0, 255, 0)  # Start point
         self.RED = (255, 0, 0)    # End point
         self.BLUE = (50, 50, 200)  # Menu selection
+        self.LIGHT_BLUE = (100, 100, 255)  # Visited cells
+        self.YELLOW = (255, 255, 0)  # Final path
         
         # Create the window with extra height for menu
         self.MENU_HEIGHT = 40
@@ -29,9 +33,11 @@ class Grid:
         self.walls = set()
         
         # Menu options
-        self.MENU_OPTIONS = ["Select Start", "Select End", "Select Wall"]
+        self.MENU_OPTIONS = ["Select Start", "Select End", "Select Wall", "Find Path", "Clear All"]
         self.selected_option = 0
         self.font = pygame.font.Font(None, 24)
+        self.path = []
+        self.visited_cells = set()
 
     def draw_menu(self):
         button_width = self.WINDOW_SIZE // len(self.MENU_OPTIONS)
@@ -68,7 +74,15 @@ class Grid:
         pygame.draw.rect(self.screen, self.WHITE, 
                         (0, self.MENU_HEIGHT, self.WINDOW_SIZE, self.WINDOW_SIZE))
         
-        # Draw cells
+        # Draw visited cells
+        for cell in self.visited_cells:
+            self.draw_cell(cell, self.LIGHT_BLUE)
+
+        # Draw final path
+        for cell in self.path:
+            self.draw_cell(cell, self.YELLOW)
+        
+        # Draw start, end and walls
         if self.start_pos:
             self.draw_cell(self.start_pos, self.GREEN)
         if self.end_pos:
@@ -86,6 +100,63 @@ class Grid:
                            (0, y), 
                            (self.WINDOW_SIZE, y))
 
+    def find_path_visualization(self):
+        if not self.start_pos or not self.end_pos:
+            return
+
+        # Initialize A* algorithm
+        astar = AStar(self.GRID_SIZE)
+        
+        # Clear previous path and visited cells
+        self.path = []
+        self.visited_cells = set()
+
+        # Get path and visualize step by step
+        frontier = []
+        heapq.heappush(frontier, (0, self.start_pos))
+        came_from = {self.start_pos: None}
+        cost_so_far = {self.start_pos: 0}
+
+        while frontier:
+            current = heapq.heappop(frontier)[1]
+            self.visited_cells.add(current)
+
+            # Visualize current state
+            self.draw_grid()
+            pygame.display.flip()
+            time.sleep(0.1)  # Add delay to visualize process
+
+            if current == self.end_pos:
+                break
+
+            for next_pos in astar.get_neighbors(current):
+                if next_pos in self.walls:
+                    continue
+
+                is_diagonal = abs(next_pos[0] - current[0]) == 1 and abs(next_pos[1] - current[1]) == 1
+                new_cost = cost_so_far[current] + (1.414 if is_diagonal else 1.0)
+
+                if next_pos not in cost_so_far or new_cost < cost_so_far[next_pos]:
+                    cost_so_far[next_pos] = new_cost
+                    priority = new_cost + astar.heuristic(self.end_pos, next_pos)
+                    heapq.heappush(frontier, (priority, next_pos))
+                    came_from[next_pos] = current
+
+        # Reconstruct and visualize final path
+        current = self.end_pos
+        while current is not None:
+            self.path.append(current)
+            current = came_from.get(current)
+        self.path.reverse()
+
+    def clear_all(self):
+        """Clear all selections, walls, paths and visited cells"""
+        self.start_pos = None
+        self.end_pos = None
+        self.walls.clear()
+        self.path = []
+        self.visited_cells = set()
+
     def run(self):
         running = True
         while running:
@@ -99,25 +170,19 @@ class Grid:
                     # Check if clicking menu
                     menu_option = self.get_menu_option(mouse_pos)
                     if menu_option != -1:
-                        self.selected_option = menu_option
+                        if menu_option == 3:  # Find Path button
+                            self.find_path_visualization()
+                        elif menu_option == 4:  # Clear All button
+                            self.clear_all()
+                        else:
+                            self.selected_option = menu_option
                         continue
 
                     # Handle grid clicks
                     if mouse_pos[1] > self.MENU_HEIGHT:
                         cell_pos = self.get_cell_position(mouse_pos)
                         if 0 <= cell_pos[0] < self.GRID_SIZE and 0 <= cell_pos[1] < self.GRID_SIZE:
-                            if self.selected_option == 0:  # Start
-                                if cell_pos != self.end_pos and cell_pos not in self.walls:
-                                    self.start_pos = cell_pos
-                            elif self.selected_option == 1:  # End
-                                if cell_pos != self.start_pos and cell_pos not in self.walls:
-                                    self.end_pos = cell_pos
-                            elif self.selected_option == 2:  # Wall
-                                if cell_pos != self.start_pos and cell_pos != self.end_pos:
-                                    if cell_pos in self.walls:
-                                        self.walls.remove(cell_pos)
-                                    else:
-                                        self.walls.add(cell_pos)
+                            self.handle_cell_click(cell_pos)
             
             # Draw everything
             self.draw_menu()
@@ -125,3 +190,23 @@ class Grid:
             pygame.display.flip()
 
         pygame.quit()
+
+    def handle_cell_click(self, cell_pos):
+        if self.selected_option == 0:  # Start
+            if cell_pos != self.end_pos and cell_pos not in self.walls:
+                self.start_pos = cell_pos
+                self.path = []  # Clear previous path
+                self.visited_cells = set()
+        elif self.selected_option == 1:  # End
+            if cell_pos != self.start_pos and cell_pos not in self.walls:
+                self.end_pos = cell_pos
+                self.path = []  # Clear previous path
+                self.visited_cells = set()
+        elif self.selected_option == 2:  # Wall
+            if cell_pos != self.start_pos and cell_pos != self.end_pos:
+                if cell_pos in self.walls:
+                    self.walls.remove(cell_pos)
+                else:
+                    self.walls.add(cell_pos)
+                self.path = []  # Clear previous path
+                self.visited_cells = set()
