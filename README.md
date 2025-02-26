@@ -21,10 +21,12 @@ This project is a **Pathfinding Algorithm Visualizer** built with Python. It hel
 ## 📸 Screenshots
 
 ### A star Algorithm:
-![astar](assets\astar.gif)
+<!-- ![astar](assets\astar.gif) -->
+<img src="assets\astar.gif" width="500">
 
 ### Dijkstra Algorithm:
-![Dijkstra](assets\dijkstra.gif)
+<!-- ![Dijkstra](assets\dijkstra.gif) -->
+<img src="assets\dijkstra.gif" width="500">
 
 ## 📦 Requirements
 
