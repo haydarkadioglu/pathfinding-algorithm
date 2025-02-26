@@ -21,6 +21,8 @@ class Grid:
         self.BLUE = (50, 50, 200)  # Menu selection
         self.LIGHT_BLUE = (100, 100, 255)  # Visited cells
         self.YELLOW = (255, 255, 0)  # Final path
+        self.DARK_BLUE = (0, 0, 150)  # Current cell being processed
+        self.current_cell = None  # Add this to track current cell
         
         # Create the window with extra height for menu
         self.MENU_HEIGHT = 40
@@ -38,6 +40,7 @@ class Grid:
         self.font = pygame.font.Font(None, 24)
         self.path = []
         self.visited_cells = set()
+        self.is_drawing = False  # Add this line to track wall drawing state
 
     def draw_menu(self):
         button_width = self.WINDOW_SIZE // len(self.MENU_OPTIONS)
@@ -77,6 +80,10 @@ class Grid:
         # Draw visited cells
         for cell in self.visited_cells:
             self.draw_cell(cell, self.LIGHT_BLUE)
+
+        # Draw current cell being processed
+        if self.current_cell:
+            self.draw_cell(self.current_cell, self.DARK_BLUE)
 
         # Draw final path
         for cell in self.path:
@@ -126,6 +133,7 @@ class Grid:
             current_time = time.time()
             if current_time - last_update >= update_delay:
                 current = heapq.heappop(frontier)[1]
+                self.current_cell = current  # Set current cell
                 self.visited_cells.add(current)
 
                 # Update display for each cell
@@ -135,6 +143,7 @@ class Grid:
                 last_update = current_time  # Update the last update time
 
                 if current == self.end_pos:
+                    self.current_cell = None  # Clear current cell at end
                     break
 
                 for next_pos in astar.get_neighbors(current):
@@ -149,6 +158,9 @@ class Grid:
                         priority = new_cost + astar.heuristic(self.end_pos, next_pos)
                         heapq.heappush(frontier, (priority, next_pos))
                         came_from[next_pos] = current
+
+        # Clear current cell before path reconstruction
+        self.current_cell = None
 
         # Reconstruct path with animation
         current = self.end_pos
@@ -192,11 +204,29 @@ class Grid:
                             self.selected_option = menu_option
                         continue
 
+                    # Start drawing walls if wall option is selected
+                    if self.selected_option == 2:
+                        self.is_drawing = True
+                    
                     # Handle grid clicks
                     if mouse_pos[1] > self.MENU_HEIGHT:
                         cell_pos = self.get_cell_position(mouse_pos)
                         if 0 <= cell_pos[0] < self.GRID_SIZE and 0 <= cell_pos[1] < self.GRID_SIZE:
                             self.handle_cell_click(cell_pos)
+
+                elif event.type == pygame.MOUSEBUTTONUP:
+                    self.is_drawing = False
+
+                elif event.type == pygame.MOUSEMOTION and self.is_drawing and self.selected_option == 2:
+                    # Handle wall drawing while dragging
+                    mouse_pos = pygame.mouse.get_pos()
+                    if mouse_pos[1] > self.MENU_HEIGHT:
+                        cell_pos = self.get_cell_position(mouse_pos)
+                        if 0 <= cell_pos[0] < self.GRID_SIZE and 0 <= cell_pos[1] < self.GRID_SIZE:
+                            if cell_pos != self.start_pos and cell_pos != self.end_pos:
+                                self.walls.add(cell_pos)
+                                self.path = []
+                                self.visited_cells = set()
             
             # Draw everything
             self.draw_menu()
