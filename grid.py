@@ -236,9 +236,15 @@ class GridGUI:
         if self.current_cell:
             self.draw_cell(self.current_cell, self.DARK_BLUE)
 
-        # Draw final path
-        for cell in self.path:
+        # Draw final path with numbers
+        for i, cell in enumerate(self.path):
             self.draw_cell(cell, self.YELLOW)
+            # Draw number on the cell
+            text = self.font.render(str(i + 1), True, self.BLACK)
+            x = cell[0] * self.CELL_SIZE + self.CELL_SIZE // 2
+            y = cell[1] * self.CELL_SIZE + self.MENU_HEIGHT + self.CELL_SIZE // 2
+            text_rect = text.get_rect(center=(x, y))
+            self.screen.blit(text, text_rect)
         
         # Draw start, end and walls
         if self.start_pos:
