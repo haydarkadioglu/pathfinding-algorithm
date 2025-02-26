@@ -117,36 +117,50 @@ class Grid:
         came_from = {self.start_pos: None}
         cost_so_far = {self.start_pos: 0}
 
+        # For controlling visualization speed
+        last_update = time.time()
+        update_delay = 0.1  # 100ms delay between updates
+        cells_per_update = 1
+
         while frontier:
-            current = heapq.heappop(frontier)[1]
-            self.visited_cells.add(current)
+            current_time = time.time()
+            if current_time - last_update >= update_delay:
+                current = heapq.heappop(frontier)[1]
+                self.visited_cells.add(current)
 
-            # Visualize current state
-            self.draw_grid()
-            pygame.display.flip()
-            time.sleep(0.1)  # Add delay to visualize process
+                # Update display for each cell
+                self.draw_grid()
+                pygame.display.flip()
+                pygame.event.pump()  # Process events to prevent freezing
+                last_update = current_time  # Update the last update time
 
-            if current == self.end_pos:
-                break
+                if current == self.end_pos:
+                    break
 
-            for next_pos in astar.get_neighbors(current):
-                if next_pos in self.walls:
-                    continue
+                for next_pos in astar.get_neighbors(current):
+                    if next_pos in self.walls:
+                        continue
 
-                is_diagonal = abs(next_pos[0] - current[0]) == 1 and abs(next_pos[1] - current[1]) == 1
-                new_cost = cost_so_far[current] + (1.414 if is_diagonal else 1.0)
+                    is_diagonal = abs(next_pos[0] - current[0]) == 1 and abs(next_pos[1] - current[1]) == 1
+                    new_cost = cost_so_far[current] + (1.414 if is_diagonal else 1.0)
 
-                if next_pos not in cost_so_far or new_cost < cost_so_far[next_pos]:
-                    cost_so_far[next_pos] = new_cost
-                    priority = new_cost + astar.heuristic(self.end_pos, next_pos)
-                    heapq.heappush(frontier, (priority, next_pos))
-                    came_from[next_pos] = current
+                    if next_pos not in cost_so_far or new_cost < cost_so_far[next_pos]:
+                        cost_so_far[next_pos] = new_cost
+                        priority = new_cost + astar.heuristic(self.end_pos, next_pos)
+                        heapq.heappush(frontier, (priority, next_pos))
+                        came_from[next_pos] = current
 
-        # Reconstruct and visualize final path
+        # Reconstruct path with animation
         current = self.end_pos
+        self.path = []
         while current is not None:
             self.path.append(current)
             current = came_from.get(current)
+            # Animate path creation
+            self.draw_grid()
+            pygame.display.flip()
+            time.sleep(0.1)  # 100ms delay for path animation
+        
         self.path.reverse()
 
     def clear_all(self):
