@@ -1,12 +1,13 @@
+import sys
 from PyQt5.QtWidgets import QApplication, QMainWindow, QWidget, QVBoxLayout, QLineEdit, QPushButton, QLabel
 from PyQt5.QtCore import Qt
-import sys
-from grid import Grid
+from grid import GridGUI
 
 class MenuWindow(QMainWindow):
-    def __init__(self):
+    def __init__(self, app):
         super().__init__()
-        self.setWindowTitle("Grid Size Selection")
+        self.app = app  # Store QApplication reference
+        self.setWindowTitle("Pathfinding Visualizer")
         self.setFixedSize(300, 200)
         
         # Create central widget and layout
@@ -26,8 +27,8 @@ class MenuWindow(QMainWindow):
         layout.addWidget(self.size_input)
         
         # Add confirm button
-        self.confirm_button = QPushButton("Create Grid")
-        self.confirm_button.clicked.connect(self.create_grid)
+        self.confirm_button = QPushButton("Start Visualization")
+        self.confirm_button.clicked.connect(self.create_visualization)
         layout.addWidget(self.confirm_button)
         
         # Add error label
@@ -36,13 +37,20 @@ class MenuWindow(QMainWindow):
         self.error_label.setAlignment(Qt.AlignCenter)
         layout.addWidget(self.error_label)
 
-    def create_grid(self):
+    def create_visualization(self):
         try:
             size = int(self.size_input.text())
             if 8 <= size <= 32:
+                self.hide()  # Hide instead of close
+                self.app.processEvents()  # Process any pending events
+                
+                # Create and run visualization
+                gui = GridGUI(800, size)
+                gui.run()
+                
+                # After visualization closes, close the menu
                 self.close()
-                grid = Grid(800, size)
-                grid.run()
+                self.app.quit()
             else:
                 self.error_label.setText("Please enter a number between 8 and 32")
         except ValueError:
@@ -50,9 +58,9 @@ class MenuWindow(QMainWindow):
 
 def main():
     app = QApplication(sys.argv)
-    window = MenuWindow()
+    window = MenuWindow(app)  # Pass app reference to window
     window.show()
-    app.exec_()
+    sys.exit(app.exec_())  # Use sys.exit to ensure clean shutdown
 
 if __name__ == "__main__":
     main()

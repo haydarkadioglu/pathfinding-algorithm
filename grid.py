@@ -1,77 +1,228 @@
 import pygame
 import time
-from astar import AStar
-import heapq
-class Grid:
+from pathfinder import PathFinder
+
+class GridGUI:
     def __init__(self, window_size, grid_size):
         # Initialize Pygame
         pygame.init()
-        pygame.font.init()  # Specifically initialize the font module
+        pygame.font.init()
         
+        # Grid parameters
         self.WINDOW_SIZE = window_size
         self.GRID_SIZE = grid_size
         self.CELL_SIZE = window_size // grid_size
+        self.MENU_HEIGHT = 40
         
+        # States
+        self.visited_cells = set()
+        self.is_drawing = False
+        self.current_cell = None
+        self.path = []
+        self.start_pos = None
+        self.end_pos = None
+        self.walls = set()
+        self.last_wall_pos = None  # Add this to track last wall position
+
         # Colors
         self.WHITE = (255, 255, 255)
         self.BLACK = (0, 0, 0)
         self.GRAY = (128, 128, 128)
-        self.GREEN = (0, 255, 0)  # Start point
-        self.RED = (255, 0, 0)    # End point
-        self.BLUE = (50, 50, 200)  # Menu selection
-        self.LIGHT_BLUE = (100, 100, 255)  # Visited cells
-        self.YELLOW = (255, 255, 0)  # Final path
-        self.DARK_BLUE = (0, 0, 150)  # Current cell being processed
-        self.current_cell = None  # Add this to track current cell
-        
-        # Create the window with extra height for menu
-        self.MENU_HEIGHT = 40
-        self.screen = pygame.display.set_mode((self.WINDOW_SIZE, self.WINDOW_SIZE + self.MENU_HEIGHT))
-        pygame.display.set_caption("Pathfinding Grid")
+        self.GREEN = (0, 255, 0)
+        self.RED = (255, 0, 0)
+        self.BLUE = (50, 50, 200)
+        self.LIGHT_BLUE = (100, 100, 255)
+        self.YELLOW = (255, 255, 0)
+        self.DARK_BLUE = (0, 0, 150)
 
-        # Initialize points and walls
-        self.start_pos = None
-        self.end_pos = None
-        self.walls = set()
-        
-        # Menu options
-        self.MENU_OPTIONS = ["Select Start", "Select End", "Select Wall", "Find Path", "Clear All"]
+        # Setup display
+        self.screen = pygame.display.set_mode((self.WINDOW_SIZE, self.WINDOW_SIZE + self.MENU_HEIGHT))
+        pygame.display.set_caption("Pathfinding Visualization")
+
+        # Menu setup
+        self.MENU_OPTIONS = ["Select Start", "Select End", "Select Wall", "A* Path", "Dijkstra", "Clear All"]
         self.selected_option = 0
         self.font = pygame.font.Font(None, 24)
+
+        # Initialize pathfinder
+        self.pathfinder = PathFinder(grid_size)
+
+    def draw_cell(self, pos, color):
+        """Draw a single cell at the given position"""
+        if 0 <= pos[0] < self.GRID_SIZE and 0 <= pos[1] < self.GRID_SIZE:
+            rect = (pos[0] * self.CELL_SIZE, 
+                   pos[1] * self.CELL_SIZE + self.MENU_HEIGHT,
+                   self.CELL_SIZE - 1, 
+                   self.CELL_SIZE - 1)
+            pygame.draw.rect(self.screen, color, rect)
+
+    def handle_grid_click(self, pos):
+        """Handle clicks on the grid"""
+        if pos[1] < self.MENU_HEIGHT:
+            return
+
+        cell_pos = self.get_cell_position(pos)
+        if not (0 <= cell_pos[0] < self.GRID_SIZE and 0 <= cell_pos[1] < self.GRID_SIZE):
+            return
+
+        if self.selected_option == 0:  # Start position
+            if cell_pos != self.end_pos and cell_pos not in self.walls:
+                self.start_pos = cell_pos
+                self.path = []
+                self.visited_cells = set()
+        elif self.selected_option == 1:  # End position
+            if cell_pos != self.start_pos and cell_pos not in self.walls:
+                self.end_pos = cell_pos
+                self.path = []
+                self.visited_cells = set()
+        elif self.selected_option == 2:  # Wall
+            if cell_pos != self.start_pos and cell_pos != self.end_pos:
+                if cell_pos in self.walls:
+                    self.walls.remove(cell_pos)
+                else:
+                    self.walls.add(cell_pos)
+                self.path = []
+                self.visited_cells = set()
+
+    def clear_all(self):
+        """Reset all grid states"""
+        self.start_pos = None
+        self.end_pos = None
+        self.walls.clear()
         self.path = []
         self.visited_cells = set()
-        self.is_drawing = False  # Add this line to track wall drawing state
+        self.current_cell = None
+        self.pathfinder = PathFinder(self.GRID_SIZE)
+
+    def interpolate_line(self, start, end):
+        """Interpolate all points between start and end positions"""
+        points = []
+        x1, y1 = start
+        x2, y2 = end
+        
+        dx = abs(x2 - x1)
+        dy = abs(y2 - y1)
+        x, y = x1, y1
+        
+        step_x = 1 if x1 < x2 else -1
+        step_y = 1 if y1 < y2 else -1
+        
+        if dx > dy:
+            err = dx / 2
+            while x != x2:
+                points.append((x, y))
+                err -= dy
+                if err < 0:
+                    y += step_y
+                    err += dx
+                x += step_x
+        else:
+            err = dy / 2
+            while y != y2:
+                points.append((x, y))
+                err -= dx
+                if err < 0:
+                    x += step_x
+                    err += dy
+                y += step_y
+                
+        points.append((x2, y2))
+        return points
+
+    def handle_wall_drawing(self, pos):
+        """Handle wall drawing with interpolation"""
+        current_cell = self.get_cell_position(pos)
+        
+        if not (0 <= current_cell[0] < self.GRID_SIZE and 0 <= current_cell[1] < self.GRID_SIZE):
+            return
+            
+        if current_cell == self.start_pos or current_cell == self.end_pos:
+            return
+
+        if self.last_wall_pos and self.last_wall_pos != current_cell:
+            # Interpolate between last position and current position
+            wall_points = self.interpolate_line(self.last_wall_pos, current_cell)
+            for point in wall_points:
+                if point != self.start_pos and point != self.end_pos:
+                    self.walls.add(point)
+        else:
+            self.walls.add(current_cell)
+            
+        self.last_wall_pos = current_cell
+
+    def run(self):
+        running = True
+        while running:
+            for event in pygame.event.get():
+                if event.type == pygame.QUIT:
+                    running = False
+                
+                elif event.type == pygame.MOUSEBUTTONDOWN:
+                    mouse_pos = pygame.mouse.get_pos()
+                    
+                    # Handle menu clicks
+                    menu_option = self.get_menu_option(mouse_pos)
+                    if menu_option != -1:
+                        if menu_option == 3:  # A* Path
+                            self.run_pathfinding(use_astar=True)
+                        elif menu_option == 4:  # Dijkstra
+                            self.run_pathfinding(use_astar=False)
+                        elif menu_option == 5:  # Clear All
+                            self.clear_all()
+                        else:
+                            self.selected_option = menu_option
+                            self.last_wall_pos = None  # Reset wall tracking
+                        continue
+
+                    # Handle grid clicks
+                    self.handle_grid_click(mouse_pos)
+                    if self.selected_option == 2:  # Wall option
+                        self.last_wall_pos = self.get_cell_position(mouse_pos)
+                
+                elif event.type == pygame.MOUSEBUTTONUP:
+                    self.last_wall_pos = None  # Reset wall tracking
+                    
+                elif event.type == pygame.MOUSEMOTION:
+                    if pygame.mouse.get_pressed()[0] and self.selected_option == 2:
+                        self.handle_wall_drawing(pygame.mouse.get_pos())
+
+            # Update display
+            self.draw_menu()
+            self.draw_grid()
+            pygame.display.flip()
+
+        pygame.quit()
 
     def draw_menu(self):
+        # Calculate button width based on number of options
         button_width = self.WINDOW_SIZE // len(self.MENU_OPTIONS)
+        
         for i, option in enumerate(self.MENU_OPTIONS):
-            color = self.BLUE if i == self.selected_option else self.GRAY
-            pygame.draw.rect(self.screen, color, 
-                           (i * button_width, 0, button_width, self.MENU_HEIGHT))
+            # Calculate button position
+            x = i * button_width
+            rect = pygame.Rect(x, 0, button_width, self.MENU_HEIGHT)
             
+            # Draw button background (blue if selected, gray if not)
+            color = self.BLUE if i == self.selected_option else self.GRAY
+            pygame.draw.rect(self.screen, color, rect)
+            
+            # Draw button text
             text = self.font.render(option, True, self.WHITE)
-            text_rect = text.get_rect(center=(i * button_width + button_width//2, self.MENU_HEIGHT//2))
+            text_rect = text.get_rect(center=(x + button_width//2, self.MENU_HEIGHT//2))
             self.screen.blit(text, text_rect)
 
     def get_menu_option(self, pos):
+        """Returns which menu option was clicked (-1 if none)"""
         if pos[1] < self.MENU_HEIGHT:
             return pos[0] // (self.WINDOW_SIZE // len(self.MENU_OPTIONS))
         return -1
-
+    
     def get_cell_position(self, mouse_pos):
         x, y = mouse_pos
         grid_x = x // self.CELL_SIZE
         grid_y = (y - self.MENU_HEIGHT) // self.CELL_SIZE
         return (grid_x, grid_y)
-
-    def draw_cell(self, pos, color):
-        x, y = pos
-        rect = (x * self.CELL_SIZE, 
-               y * self.CELL_SIZE + self.MENU_HEIGHT, 
-               self.CELL_SIZE - 1, 
-               self.CELL_SIZE - 1)
-        pygame.draw.rect(self.screen, color, rect)
-
+    
     def draw_grid(self):
         # Fill background
         pygame.draw.rect(self.screen, self.WHITE, 
@@ -107,152 +258,33 @@ class Grid:
                            (0, y), 
                            (self.WINDOW_SIZE, y))
 
-    def find_path_visualization(self):
+    def run_pathfinding(self, use_astar=True):
         if not self.start_pos or not self.end_pos:
             return
 
-        # Initialize A* algorithm
-        astar = AStar(self.GRID_SIZE)
-        
-        # Clear previous path and visited cells
+        # Reset previous path and visited cells
         self.path = []
         self.visited_cells = set()
-
-        # Get path and visualize step by step
-        frontier = []
-        heapq.heappush(frontier, (0, self.start_pos))
-        came_from = {self.start_pos: None}
-        cost_so_far = {self.start_pos: 0}
-
-        # For controlling visualization speed
-        last_update = time.time()
-        update_delay = 0.1  # 100ms delay between updates
-        cells_per_update = 1
-
-        while frontier:
-            current_time = time.time()
-            if current_time - last_update >= update_delay:
-                current = heapq.heappop(frontier)[1]
-                self.current_cell = current  # Set current cell
-                self.visited_cells.add(current)
-
-                # Update display for each cell
-                self.draw_grid()
-                pygame.display.flip()
-                pygame.event.pump()  # Process events to prevent freezing
-                last_update = current_time  # Update the last update time
-
-                if current == self.end_pos:
-                    self.current_cell = None  # Clear current cell at end
-                    break
-
-                for next_pos in astar.get_neighbors(current):
-                    if next_pos in self.walls:
-                        continue
-
-                    is_diagonal = abs(next_pos[0] - current[0]) == 1 and abs(next_pos[1] - current[1]) == 1
-                    new_cost = cost_so_far[current] + (1.414 if is_diagonal else 1.0)
-
-                    if next_pos not in cost_so_far or new_cost < cost_so_far[next_pos]:
-                        cost_so_far[next_pos] = new_cost
-                        priority = new_cost + astar.heuristic(self.end_pos, next_pos)
-                        heapq.heappush(frontier, (priority, next_pos))
-                        came_from[next_pos] = current
-
-        # Clear current cell before path reconstruction
         self.current_cell = None
 
-        # Reconstruct path with animation
-        current = self.end_pos
-        self.path = []
-        while current is not None:
-            self.path.insert(0, current)  # Insert at beginning instead of appending and reversing
-            current = came_from.get(current)
-            # Draw only the new cell instead of entire path
-            self.draw_cell(self.path[0], self.YELLOW)
-            pygame.display.flip()
-            time.sleep(0.05)  # Reduced delay for smoother animation
-        
-        # Draw final grid state
-        self.draw_grid()
-        pygame.display.flip()
+        # Update pathfinder with current grid state
+        self.pathfinder.start_pos = self.start_pos
+        self.pathfinder.end_pos = self.end_pos
+        self.pathfinder.walls = self.walls.copy()
 
-    def clear_all(self):
-        """Clear all selections, walls, paths and visited cells"""
-        self.start_pos = None
-        self.end_pos = None
-        self.walls.clear()
-        self.path = []
-        self.visited_cells = set()
-
-    def run(self):
-        running = True
-        while running:
-            for event in pygame.event.get():
-                if event.type == pygame.QUIT:
-                    running = False
-                
-                if event.type == pygame.MOUSEBUTTONDOWN:
-                    mouse_pos = pygame.mouse.get_pos()
-                    
-                    # Check if clicking menu
-                    menu_option = self.get_menu_option(mouse_pos)
-                    if menu_option != -1:
-                        if menu_option == 3:  # Find Path button
-                            self.find_path_visualization()
-                        elif menu_option == 4:  # Clear All button
-                            self.clear_all()
-                        else:
-                            self.selected_option = menu_option
-                        continue
-
-                    # Start drawing walls if wall option is selected
-                    if self.selected_option == 2:
-                        self.is_drawing = True
-                    
-                    # Handle grid clicks
-                    if mouse_pos[1] > self.MENU_HEIGHT:
-                        cell_pos = self.get_cell_position(mouse_pos)
-                        if 0 <= cell_pos[0] < self.GRID_SIZE and 0 <= cell_pos[1] < self.GRID_SIZE:
-                            self.handle_cell_click(cell_pos)
-
-                elif event.type == pygame.MOUSEBUTTONUP:
-                    self.is_drawing = False
-
-                elif event.type == pygame.MOUSEMOTION and self.is_drawing and self.selected_option == 2:
-                    # Handle wall drawing while dragging
-                    mouse_pos = pygame.mouse.get_pos()
-                    if mouse_pos[1] > self.MENU_HEIGHT:
-                        cell_pos = self.get_cell_position(mouse_pos)
-                        if 0 <= cell_pos[0] < self.GRID_SIZE and 0 <= cell_pos[1] < self.GRID_SIZE:
-                            if cell_pos != self.start_pos and cell_pos != self.end_pos:
-                                self.walls.add(cell_pos)
-                                self.path = []
-                                self.visited_cells = set()
+        # Run pathfinding algorithm with animation
+        for step_type, position in self.pathfinder.find_path_animated(use_astar):
+            if step_type == "visit":
+                self.current_cell = position
+                self.visited_cells.add(position)
+            elif step_type == "path":
+                self.path.append(position)
             
-            # Draw everything
-            self.draw_menu()
+            # Draw current state
             self.draw_grid()
             pygame.display.flip()
+            pygame.event.pump()  # Process events to keep window responsive
+            time.sleep(0.05)  # Add delay for animation
 
-        pygame.quit()
-
-    def handle_cell_click(self, cell_pos):
-        if self.selected_option == 0:  # Start
-            if cell_pos != self.end_pos and cell_pos not in self.walls:
-                self.start_pos = cell_pos
-                self.path = []  # Clear previous path
-                self.visited_cells = set()
-        elif self.selected_option == 1:  # End
-            if cell_pos != self.start_pos and cell_pos not in self.walls:
-                self.end_pos = cell_pos
-                self.path = []  # Clear previous path
-                self.visited_cells = set()
-        elif self.selected_option == 2:  # Wall
-            if cell_pos != self.start_pos and cell_pos != self.end_pos:
-                if cell_pos in self.walls:
-                    self.walls.remove(cell_pos)
-                else:
-                    self.walls.add(cell_pos)
-                self.path = []  # Clear previous path
-                self.visited_cells = set()
+        # Clear current cell after finishing
+        self.current_cell = None
