@@ -166,14 +166,16 @@ class Grid:
         current = self.end_pos
         self.path = []
         while current is not None:
-            self.path.append(current)
+            self.path.insert(0, current)  # Insert at beginning instead of appending and reversing
             current = came_from.get(current)
-            # Animate path creation
-            self.draw_grid()
+            # Draw only the new cell instead of entire path
+            self.draw_cell(self.path[0], self.YELLOW)
             pygame.display.flip()
-            time.sleep(0.1)  # 100ms delay for path animation
+            time.sleep(0.05)  # Reduced delay for smoother animation
         
-        self.path.reverse()
+        # Draw final grid state
+        self.draw_grid()
+        pygame.display.flip()
 
     def clear_all(self):
         """Clear all selections, walls, paths and visited cells"""
