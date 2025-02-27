@@ -31,7 +31,9 @@ This project is a **Pathfinding Algorithm Visualizer** built with Python. It hel
 ## 📦 Requirements
 
 - Python 🐍
-- Tkinter (for GUI)
+- PyQt5 (for GUI)
+- heapq
+- pygame
 
 To install dependencies, run:
 ```bash
