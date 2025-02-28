@@ -1,14 +1,15 @@
 import sys
-from PyQt5.QtWidgets import QApplication, QMainWindow, QWidget, QVBoxLayout, QLineEdit, QPushButton, QLabel
+from PyQt5.QtWidgets import QApplication, QMainWindow, QWidget, QVBoxLayout, QLineEdit, QPushButton, QLabel, QRadioButton, QButtonGroup
 from PyQt5.QtCore import Qt
 from grid import GridGUI
+from stops_mode import StopsMode
 
 class MenuWindow(QMainWindow):
     def __init__(self, app):
         super().__init__()
         self.app = app  # Store QApplication reference
         self.setWindowTitle("Pathfinding Visualizer")
-        self.setFixedSize(300, 200)
+        self.setFixedSize(300, 250)  # Made window slightly taller
         
         # Create central widget and layout
         central_widget = QWidget()
@@ -25,6 +26,16 @@ class MenuWindow(QMainWindow):
         self.size_input.setPlaceholderText("Enter a number (e.g., 16)")
         self.size_input.setAlignment(Qt.AlignCenter)
         layout.addWidget(self.size_input)
+        
+        # Add mode selection
+        self.mode_group = QButtonGroup()
+        normal_mode = QRadioButton("Normal Mode")
+        stops_mode = QRadioButton("Stops Mode")
+        normal_mode.setChecked(True)
+        self.mode_group.addButton(normal_mode, 0)
+        self.mode_group.addButton(stops_mode, 1)
+        layout.addWidget(normal_mode)
+        layout.addWidget(stops_mode)
         
         # Add confirm button
         self.confirm_button = QPushButton("Start Visualization")
@@ -44,8 +55,11 @@ class MenuWindow(QMainWindow):
                 self.hide()  # Hide instead of close
                 self.app.processEvents()  # Process any pending events
                 
-                # Create and run visualization
-                gui = GridGUI(800, size)
+                # Create visualization based on selected mode
+                if self.mode_group.checkedId() == 0:
+                    gui = GridGUI(800, size)
+                else:
+                    gui = StopsMode(800, size)
                 gui.run()
                 
                 # After visualization closes, close the menu
