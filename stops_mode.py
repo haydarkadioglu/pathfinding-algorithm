@@ -2,27 +2,29 @@ import pygame
 from grid import GridGUI
 from collections import OrderedDict
 from typing import List, Tuple, Dict
+import time
+from stops_gui import StopsGUI
 
-class StopsMode(GridGUI):
+class StopsMode:
     def __init__(self, window_size, grid_size):
-        super().__init__(window_size, grid_size)
+        self.gui = StopsGUI(window_size, grid_size)
+        self.gui.logic = self
         
-        # Override menu options to include both connection and pathfinding
-        self.MENU_OPTIONS = ["Select Start", "Select End", "Add Stop", 
-                           "Connect Stops", "A* Path", "Dijkstra", "Clear All"]
+        self.grid_size = grid_size
+        self.stops = OrderedDict()
+        self.connections = {}
+        self.available_numbers = []
+        self.selected_stop = None
+        self.is_connecting = False
         
-        # Add new attributes for stops mode
-        self.stops = OrderedDict()  # Dictionary to store stops with order
-        self.connections = {}  # Dictionary to store connections between stops
-        self.available_numbers = []  # List to track available numbers
-        self.selected_stop = None  # For connecting stops
-        self.is_connecting = False  # Flag for connection mode
-
-        # Add new color for stops
-        self.ORANGE = (255, 165, 0)  # Color for stops
+        self.start_pos = None
+        self.end_pos = None
+        self.path = []
+        self.visited_cells = set()
+        self.current_cell = None
+        self.temp_connection = None  # Add this line
 
     def add_stop(self, cell_pos):
-        """Add a stop with the lowest available number"""
         if self.available_numbers:
             number = min(self.available_numbers)
             self.available_numbers.remove(number)
@@ -31,42 +33,52 @@ class StopsMode(GridGUI):
         self.stops[cell_pos] = number
 
     def remove_stop(self, cell_pos):
-        """Remove a stop and make its number available"""
         if cell_pos in self.stops:
             number = self.stops[cell_pos]
             self.available_numbers.append(number)
             self.stops.pop(cell_pos)
 
+    def clear_all(self):
+        self.stops.clear()
+        self.connections.clear()
+        self.available_numbers = []
+        self.selected_stop = None
+        self.is_connecting = False
+        self.start_pos = None
+        self.end_pos = None
+        self.path = []
+        self.visited_cells = set()
+        self.current_cell = None
+
     def handle_grid_click(self, pos):
-        if pos[1] < self.MENU_HEIGHT:
+        """Handle grid clicks based on selected option"""
+        # Convert screen position to grid position
+        cell_pos = (pos[0] // self.gui.CELL_SIZE,
+                    (pos[1] - self.gui.MENU_HEIGHT) // self.gui.CELL_SIZE)
+        
+        if not (0 <= cell_pos[0] < self.grid_size and 0 <= cell_pos[1] < self.grid_size):
             return
 
-        cell_pos = self.get_cell_position(pos)
-        if not (0 <= cell_pos[0] < self.GRID_SIZE and 0 <= cell_pos[1] < self.GRID_SIZE):
-            return
-
-        if self.selected_option == 0:  # Start position
+        if self.gui.selected_option == 0:  # Start position
             if cell_pos not in self.stops:
-                if self.start_pos in self.connections:
-                    self.connections.pop(self.start_pos)
                 self.start_pos = cell_pos
                 self.path = []
                 self.visited_cells = set()
-        elif self.selected_option == 1:  # End position
+        
+        elif self.gui.selected_option == 1:  # End position
             if cell_pos not in self.stops:
-                if self.end_pos in self.connections:
-                    self.connections.pop(self.end_pos)
                 self.end_pos = cell_pos
                 self.path = []
                 self.visited_cells = set()
-        elif self.selected_option == 2:  # Add/Remove stop
+        
+        elif self.gui.selected_option == 2:  # Add/Remove stop
             if cell_pos != self.start_pos and cell_pos != self.end_pos:
                 if cell_pos in self.stops:
                     # Remove stop and its connections
                     self.remove_stop(cell_pos)
                     if cell_pos in self.connections:
-                        # Remove connections to this stop from other stops
-                        connected_stops = self.connections[cell_pos].copy()  # Create copy to avoid modification during iteration
+                        # Remove connections to this stop
+                        connected_stops = self.connections[cell_pos].copy()
                         for connected_stop in connected_stops:
                             if connected_stop in self.connections:
                                 self.connections[connected_stop].remove(cell_pos)
@@ -76,15 +88,21 @@ class StopsMode(GridGUI):
                 else:
                     # Add new stop
                     self.add_stop(cell_pos)
-
-        elif self.selected_option == 3:  # Connect/Disconnect stops
-            if cell_pos in self.stops or cell_pos == self.start_pos or cell_pos == self.end_pos:
+        
+        elif self.gui.selected_option == 3:  # Connect/Disconnect stops
+            valid_points = list(self.stops.keys())
+            if self.start_pos:
+                valid_points.append(self.start_pos)
+            if self.end_pos:
+                valid_points.append(self.end_pos)
+                
+            if cell_pos in valid_points:
                 if not self.is_connecting:
                     self.selected_stop = cell_pos
                     self.is_connecting = True
                 else:
                     if cell_pos != self.selected_stop:
-                        # Check if connection already exists
+                        # Check if connection exists
                         if (self.selected_stop in self.connections and 
                             cell_pos in self.connections[self.selected_stop]):
                             # Remove existing connection
@@ -106,142 +124,181 @@ class StopsMode(GridGUI):
                     self.selected_stop = None
                     self.is_connecting = False
 
-    def draw_grid(self):
-        # Fill background with white
-        pygame.draw.rect(self.screen, self.WHITE, 
-                        (0, self.MENU_HEIGHT, self.WINDOW_SIZE, self.WINDOW_SIZE))
+    def finish_connection(self, pos):
+        """Finish connecting two stops"""
+        cell_pos = (pos[0] // self.gui.CELL_SIZE,
+                   (pos[1] - self.gui.MENU_HEIGHT) // self.gui.CELL_SIZE)
 
-        # Draw menu first
-        self.draw_menu()  # Make sure menu is drawn
-
-        # Draw grid lines
-        for x in range(0, self.WINDOW_SIZE, self.CELL_SIZE):
-            pygame.draw.line(self.screen, self.GRAY, 
-                           (x, self.MENU_HEIGHT), 
-                           (x, self.WINDOW_SIZE + self.MENU_HEIGHT))
-        for y in range(self.MENU_HEIGHT, self.WINDOW_SIZE + self.MENU_HEIGHT, self.CELL_SIZE):
-            pygame.draw.line(self.screen, self.GRAY, 
-                           (0, y), 
-                           (self.WINDOW_SIZE, y))
-
-        # Draw connections between stops with costs
-        for stop1, connected_stops in self.connections.items():
-            for stop2 in connected_stops:
-                # Calculate line start and end points
-                x1 = stop1[0] * self.CELL_SIZE + self.CELL_SIZE // 2
-                y1 = stop1[1] * self.CELL_SIZE + self.MENU_HEIGHT + self.CELL_SIZE // 2
-                x2 = stop2[0] * self.CELL_SIZE + self.CELL_SIZE // 2
-                y2 = stop2[1] * self.CELL_SIZE + self.MENU_HEIGHT + self.CELL_SIZE // 2
-                
-                # Draw connection line
-                pygame.draw.line(self.screen, self.BLUE, (x1, y1), (x2, y2), 2)
-                
-                # Calculate and draw cost
-                cost = abs(stop2[0] - stop1[0]) + abs(stop2[1] - stop1[1])  # Manhattan distance
-                mid_x = (x1 + x2) // 2
-                mid_y = (y1 + y2) // 2
-                
-                # Draw cost background (small white rectangle)
-                text = self.font.render(str(cost), True, self.BLACK)
-                text_rect = text.get_rect(center=(mid_x, mid_y))
-                padding = 2
-                bg_rect = pygame.Rect(text_rect.x - padding,
-                                    text_rect.y - padding,
-                                    text_rect.width + 2 * padding,
-                                    text_rect.height + 2 * padding)
-                pygame.draw.rect(self.screen, self.WHITE, bg_rect)
-                
-                # Draw cost number
-                self.screen.blit(text, text_rect)
-
-        # Draw visited cells and path
-        for cell in self.visited_cells:
-            self.draw_cell(cell, self.LIGHT_BLUE)
-        for cell in self.path:
-            self.draw_cell(cell, self.YELLOW)
-
-        # Draw stops with numbers
-        for stop_pos, stop_num in self.stops.items():
-            self.draw_cell(stop_pos, self.ORANGE)
-            text = self.font.render(str(stop_num), True, self.BLACK)
-            x = stop_pos[0] * self.CELL_SIZE + self.CELL_SIZE // 2
-            y = stop_pos[1] * self.CELL_SIZE + self.MENU_HEIGHT + self.CELL_SIZE // 2
-            text_rect = text.get_rect(center=(x, y))
-            self.screen.blit(text, text_rect)
-
-        # Draw start and end positions
+        valid_points = list(self.stops.keys())
         if self.start_pos:
-            self.draw_cell(self.start_pos, self.GREEN)
+            valid_points.append(self.start_pos)
         if self.end_pos:
-            self.draw_cell(self.end_pos, self.RED)
+            valid_points.append(self.end_pos)
 
-        # Highlight selected stop
-        if self.selected_stop:
-            rect = (self.selected_stop[0] * self.CELL_SIZE, 
-                   self.selected_stop[1] * self.CELL_SIZE + self.MENU_HEIGHT,
-                   self.CELL_SIZE, self.CELL_SIZE)
-            pygame.draw.rect(self.screen, self.YELLOW, rect, 3)
+        if cell_pos in valid_points and self.selected_stop and cell_pos != self.selected_stop:
+            # Check if connection exists
+            if (self.selected_stop in self.connections and 
+                cell_pos in self.connections[self.selected_stop]):
+                # Remove existing connection
+                self.connections[self.selected_stop].remove(cell_pos)
+                self.connections[cell_pos].remove(self.selected_stop)
+                # Clean up empty sets
+                if not self.connections[self.selected_stop]:
+                    self.connections.pop(self.selected_stop)
+                if not self.connections[cell_pos]:
+                    self.connections.pop(cell_pos)
+            else:
+                # Add new connection
+                if self.selected_stop not in self.connections:
+                    self.connections[self.selected_stop] = set()
+                if cell_pos not in self.connections:
+                    self.connections[cell_pos] = set()
+                self.connections[self.selected_stop].add(cell_pos)
+                self.connections[cell_pos].add(self.selected_stop)
 
-    def clear_all(self):
-        """Override clear all to reset available numbers"""
-        super().clear_all()
-        self.stops.clear()
-        self.connections.clear()
-        self.available_numbers = []
         self.selected_stop = None
         self.is_connecting = False
 
-    def draw_menu(self):
-        # Calculate button width based on number of options
-        button_width = self.WINDOW_SIZE // len(self.MENU_OPTIONS)
+    def start_connection(self, pos):
+        """Start creating a connection"""
+        cell_pos = (pos[0] // self.gui.CELL_SIZE,
+                   (pos[1] - self.gui.MENU_HEIGHT) // self.gui.CELL_SIZE)
         
-        # Draw menu background
-        pygame.draw.rect(self.screen, self.WHITE, (0, 0, self.WINDOW_SIZE, self.MENU_HEIGHT))
+        valid_points = list(self.stops.keys())
+        if self.start_pos:
+            valid_points.append(self.start_pos)
+        if self.end_pos:
+            valid_points.append(self.end_pos)
+            
+        if cell_pos in valid_points:
+            self.selected_stop = cell_pos
+            self.is_connecting = True
+
+    def update_connection(self, pos):
+        """Update temporary connection preview"""
+        if self.is_connecting:
+            self.temp_connection = pos
+
+    def end_connection(self, pos):
+        """Finish creating a connection"""
+        if not self.is_connecting:
+            return
+
+        cell_pos = (pos[0] // self.gui.CELL_SIZE,
+                   (pos[1] - self.gui.MENU_HEIGHT) // self.gui.CELL_SIZE)
+
+        valid_points = list(self.stops.keys())
+        if self.start_pos:
+            valid_points.append(self.start_pos)
+        if self.end_pos:
+            valid_points.append(self.end_pos)
+
+        if cell_pos in valid_points and self.selected_stop and cell_pos != self.selected_stop:
+            # Toggle connection
+            if (self.selected_stop in self.connections and 
+                cell_pos in self.connections[self.selected_stop]):
+                # Remove existing connection
+                self.connections[self.selected_stop].remove(cell_pos)
+                self.connections[cell_pos].remove(self.selected_stop)
+                # Clean up empty sets
+                if not self.connections[self.selected_stop]:
+                    self.connections.pop(self.selected_stop)
+                if not self.connections[cell_pos]:
+                    self.connections.pop(cell_pos)
+            else:
+                # Add new connection
+                if self.selected_stop not in self.connections:
+                    self.connections[self.selected_stop] = set()
+                if cell_pos not in self.connections:
+                    self.connections[cell_pos] = set()
+                self.connections[self.selected_stop].add(cell_pos)
+                self.connections[cell_pos].add(self.selected_stop)
+
+        self.selected_stop = None
+        self.is_connecting = False
+        self.temp_connection = None
+
+    def find_path_through_stops(self, use_astar=True):
+        """Find path visiting all connected stops"""
+        if not self.start_pos or not self.end_pos:
+            return
+
+        # Reset previous path
+        self.path = []
+        self.visited_cells = set()
+        self.current_cell = None
+
+        # Get all stops that are connected (either directly or indirectly)
+        connected_stops = set()
+        to_visit = {self.start_pos}
+        visited = set()
+        total_cost = 0
+
+        while to_visit:
+            current = to_visit.pop()
+            visited.add(current)
+            if current in self.connections:
+                connected_stops.add(current)
+                for next_stop in self.connections[current]:
+                    if next_stop not in visited:
+                        to_visit.add(next_stop)
+
+        # Create ordered list of points to visit
+        points_to_visit = [self.start_pos]
+        current_point = self.start_pos
+
+        # Find path through stops
+        visited_stops = {self.start_pos}
+        path_costs = []  # Store costs between stops
+
+        while len(visited_stops) < len(connected_stops):
+            if current_point not in self.connections:
+                break
+
+            # Find next stop with lowest cost
+            nearest = None
+            min_cost = float('inf')
+            for next_point in self.connections[current_point]:
+                if next_point not in visited_stops:
+                    cost = abs(next_point[0] - current_point[0]) + abs(next_point[1] - current_point[1])
+                    if cost < min_cost:
+                        min_cost = min_cost
+                        nearest = next_point
+
+            if nearest:
+                points_to_visit.append(nearest)
+                path_costs.append(min_cost)
+                total_cost += min_cost
+                visited_stops.add(nearest)
+                current_point = nearest
+                
+                # Highlight current stop and show cost
+                self.current_cell = nearest
+                self.visited_cells.add(nearest)
+                self.gui.draw_grid()
+                pygame.display.flip()
+                pygame.event.pump()
+                time.sleep(0.5)  # Longer delay to see each stop
+
+        # Add final connection to end point if needed
+        if points_to_visit[-1] != self.end_pos:
+            points_to_visit.append(self.end_pos)
+            final_cost = abs(self.end_pos[0] - points_to_visit[-2][0]) + abs(self.end_pos[1] - points_to_visit[-2][1])
+            path_costs.append(final_cost)
+            total_cost += final_cost
+
+        # Show final path through stops
+        self.path = points_to_visit
         
-        for i, option in enumerate(self.MENU_OPTIONS):
-            # Calculate button position
-            x = i * button_width
-            rect = pygame.Rect(x, 0, button_width, self.MENU_HEIGHT)
-            
-            # Draw button background (blue if selected, gray if not)
-            color = self.BLUE if i == self.selected_option else self.GRAY
-            pygame.draw.rect(self.screen, color, rect)
-            
-            # Draw button text
-            text = self.font.render(option, True, self.WHITE)
-            text_rect = text.get_rect(center=(x + button_width//2, self.MENU_HEIGHT//2))
-            self.screen.blit(text, text_rect)
+        # Draw final state with total cost
+        font = pygame.font.Font(None, 36)
+        text = font.render(f"Total Cost: {total_cost}", True, (0, 0, 0))
+        text_rect = text.get_rect(center=(self.gui.WINDOW_SIZE // 2, self.gui.MENU_HEIGHT // 2))
+        self.gui.screen.blit(text, text_rect)
+        pygame.display.flip()
+        time.sleep(2)  # Show total cost for 2 seconds
+
+        self.current_cell = None
 
     def run(self):
-        running = True
-        while running:
-            for event in pygame.event.get():
-                if event.type == pygame.QUIT:
-                    running = False
-                
-                elif event.type == pygame.MOUSEBUTTONDOWN:
-                    mouse_pos = pygame.mouse.get_pos()
-                    
-                    # Handle menu clicks
-                    menu_option = self.get_menu_option(mouse_pos)
-                    if menu_option != -1:
-                        if menu_option == 4:  # A* Path
-                            self.run_pathfinding(use_astar=True)
-                        elif menu_option == 5:  # Dijkstra
-                            self.run_pathfinding(use_astar=False)
-                        elif menu_option == 6:  # Clear All
-                            self.clear_all()
-                        else:
-                            self.selected_option = menu_option
-                            self.selected_stop = None
-                            self.is_connecting = False
-                        continue
-
-                    # Handle grid clicks
-                    self.handle_grid_click(mouse_pos)
-
-            # Update display
-            self.draw_grid()
-            pygame.display.flip()
-
-        pygame.quit()
+        self.gui.run()

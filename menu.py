@@ -30,12 +30,12 @@ class MenuWindow(QMainWindow):
         # Add mode selection
         self.mode_group = QButtonGroup()
         normal_mode = QRadioButton("Normal Mode")
-        stops_mode = QRadioButton("Stops Mode")
+        # stops_mode = QRadioButton("Stops Mode")
         normal_mode.setChecked(True)
         self.mode_group.addButton(normal_mode, 0)
-        self.mode_group.addButton(stops_mode, 1)
+        # self.mode_group.addButton(stops_mode, 1)
         layout.addWidget(normal_mode)
-        layout.addWidget(stops_mode)
+        # layout.addWidget(stops_mode)
         
         # Add confirm button
         self.confirm_button = QPushButton("Start Visualization")
